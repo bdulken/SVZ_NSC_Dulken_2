@@ -1,0 +1,340 @@
+#Diffusion Maps with most variable genes
+rm(list=ls())
+library(ggplot2)
+library(tsne)
+library(edgeR)
+library(Seurat)
+library(destiny)
+
+#Loading all high quality cells and filtering for lowly expressed genes and cell cycle genes
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+allcounts_allcells<-read.table("AllCounts_specPops_read_gene_ERCC_filt_FINAL.txt")
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+oligos<-as.vector(read.table("STAR_oligos_updated_09232015.txt")[,1])
+allcounts_allcells_nooligo<-allcounts_allcells[,-na.omit(match(oligos,colnames(allcounts_allcells)))]
+allcounts_allcells_nooligo<-allcounts_allcells_nooligo[,!grepl("Ast",colnames(allcounts_allcells_nooligo))]
+
+#Filtering for expressed by 5 cells at 10 counts
+greaterthan0<-allcounts_allcells_nooligo>10
+greaterthan0sum<-rowSums(greaterthan0)
+allcounts_allcells_nooligo_genefilt<-allcounts_allcells_nooligo[greaterthan0sum>=5,]
+
+# #Removing cell cycle genes
+# setwd("/Volumes/guacamole/scLMV/")
+# cellcycle<-as.vector(read.table("cellcyclesymbols.txt")[,1])
+# allcounts_allcells_nooligo_genefilt_nocycle<-allcounts_allcells_nooligo_genefilt[-na.omit(match(cellcycle,rownames(allcounts_allcells_nooligo_genefilt))),]
+
+#glm <- DGEList(counts=allcounts_allcells_nooligo_genefilt_nocycle)
+glm <- DGEList(counts=allcounts_allcells_nooligo_genefilt)
+glm.norm <- calcNormFactors(glm,method="TMM")
+load("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Katja_exonic_gene_sizes_ERCC92.RData")
+names(exonic.gene.sizes) <- tolower(names(exonic.gene.sizes))
+ind <- match(tolower(rownames(glm.norm)), names(exonic.gene.sizes))
+exonic.gene.sizes.ord <- exonic.gene.sizes[ind]
+genes <- data.frame(gene.symbol=rownames(glm.norm),
+                    exonic.size=exonic.gene.sizes.ord)
+fpkm_glm_genefilt_nooligo <- rpkm(glm.norm, gene.length=genes$exonic.size,
+                                  normalized.lib.sizes=T, log=F)
+
+nbt.data<-data.frame(fpkm_glm_genefilt_nooligo)
+
+nbt=new("seurat",raw.data=nbt.data)
+
+# Take all genes in > 3 cells, all cells with > 1k genes, use an expression threshold of 1
+# Cell type is encoded in the second _ field, will be stored in nbt@ident and also placed in the "orig.ident" field of object@data.info 
+nbt<-Setup(nbt,project="NBT",min.cells = 1,min.genes = 400,is.expr=0,do.logNormalize = T) 
+
+
+mean<-apply(nbt@data,1,expMean)
+write.table(mean,"mean.txt")
+highmean<-mean[mean>0]
+variable<-apply(nbt@data,1,logVarDivMean)
+write.table(variable,"variable.txt")
+variable.good.mean<-variable[match(names(highmean),names(variable))]
+variable.order<-variable.good.mean[order(variable.good.mean,decreasing=T)]
+
+var.genes<-names(variable.order[1:2500])
+#write.table(var.genes,"var.genes.2500.1.0.txt")
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+oligos<-as.vector(read.table("STAR_oligos_updated_09232015.txt")[,1])
+allcounts_allcells_nooligo<-allcounts_allcells[,-na.omit(match(oligos,colnames(allcounts_allcells)))]
+allcounts_allcells_nooligo<-allcounts_allcells_nooligo[,!grepl("Ast",colnames(allcounts_allcells_nooligo))]
+
+#Filtering for expressed by 5 cells at 10 counts
+greaterthan0<-allcounts_allcells_nooligo>10
+greaterthan0sum<-rowSums(greaterthan0)
+allcounts_allcells_nooligo_genefilt_nocycle<-allcounts_allcells_nooligo[greaterthan0sum>=5,]
+
+
+glm <- DGEList(counts=allcounts_allcells_nooligo_genefilt_nocycle)
+glm.norm <- calcNormFactors(glm,method="TMM")
+load("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Katja_exonic_gene_sizes_ERCC92.RData")
+names(exonic.gene.sizes) <- tolower(names(exonic.gene.sizes))
+ind <- match(tolower(rownames(glm.norm)), names(exonic.gene.sizes))
+exonic.gene.sizes.ord <- exonic.gene.sizes[ind]
+genes <- data.frame(gene.symbol=rownames(glm.norm),
+                    exonic.size=exonic.gene.sizes.ord)
+fpkm_glm_genefilt_nooligo <- rpkm(glm.norm, gene.length=genes$exonic.size,
+                                  normalized.lib.sizes=T, log=F)
+
+fpkm_glm_genefilt_nooligo<-fpkm_glm_genefilt_nooligo[match(var.genes,rownames(fpkm_glm_genefilt_nooligo)),]
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Ordering")
+group1<-as.vector(read.table("group1_10282015_50minModels_quiescent1_consensus_2.txt")[,1])
+group2<-as.vector(read.table("group2_10282015_50minModels_active_nondividing_consensus_2.txt")[,1])
+group3<-as.vector(read.table("group3_10282015_50minModels_active_dividing_early_consensus_2.txt")[,1])
+group4<-as.vector(read.table("group4_10282015_50minModels_active_dividing_late_consensus_2.txt")[,1])
+group5<-as.vector(read.table("group5_10282015_50minModels_active_dividing_consensus_2.txt")[,1])
+
+
+group1_fpkm<-fpkm_glm_genefilt_nooligo[,match(group1,colnames(fpkm_glm_genefilt_nooligo))]
+group2_fpkm<-fpkm_glm_genefilt_nooligo[,match(group2,colnames(fpkm_glm_genefilt_nooligo))]
+group3_fpkm<-fpkm_glm_genefilt_nooligo[,match(group3,colnames(fpkm_glm_genefilt_nooligo))]
+group4_fpkm<-fpkm_glm_genefilt_nooligo[,match(group4,colnames(fpkm_glm_genefilt_nooligo))]
+group5_fpkm<-fpkm_glm_genefilt_nooligo[,match(group5,colnames(fpkm_glm_genefilt_nooligo))]
+comb_fpkm<-cbind(group1_fpkm,group2_fpkm,group3_fpkm,group4_fpkm,group5_fpkm)
+
+comb_fpkm_col<-vector(length=length(comb_fpkm[1,]),mode="character")
+comb_fpkm_col[match(group1,colnames(comb_fpkm))]<-"#9966FF"
+comb_fpkm_col[match(group2,colnames(comb_fpkm))]<-"#c9cc00"
+comb_fpkm_col[match(group3,colnames(comb_fpkm))]<-"#ff9933"
+comb_fpkm_col[match(group4,colnames(comb_fpkm))]<-"#ff3333"
+comb_fpkm_col[match(group5,colnames(comb_fpkm))]<-"#00CCFF"
+
+for(z in 1:20){
+  setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Figure3_Output/Tsne_ClusteringTesting/correlation/manualvariability")
+  dm<-DiffusionMap(t(log(comb_fpkm+1)))
+  pdf(paste("diffusion_map_allcells_cutoff_0_2500_genes_minexprs_",z,".pdf",sep=""))
+  plot(dm,1:3,col=alpha(comb_fpkm_col,0.7),pch=16,cex.symbols=1.5)
+  dev.off()
+}
+
+write.table(var.genes,"var.genes.0.2500.txt")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+rm(list=ls())
+library(ggplot2)
+library(tsne)
+library(edgeR)
+library(Seurat)
+
+#Loading all high quality cells and filtering for lowly expressed genes and cell cycle genes
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+allcounts_allcells<-read.table("AllCounts_specPops_read_gene_ERCC_filt_FINAL.txt")
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+oligos<-as.vector(read.table("STAR_oligos_updated_09232015.txt")[,1])
+allcounts_allcells_nooligo<-allcounts_allcells[,-na.omit(match(oligos,colnames(allcounts_allcells)))]
+allcounts_allcells_nooligo<-allcounts_allcells_nooligo[,!grepl("Ast",colnames(allcounts_allcells_nooligo))]
+
+#Filtering for expressed by 5 cells at 10 counts
+greaterthan0<-allcounts_allcells_nooligo>10
+greaterthan0sum<-rowSums(greaterthan0)
+allcounts_allcells_nooligo_genefilt_nocycle<-allcounts_allcells_nooligo[greaterthan0sum>=5,]
+
+
+glm <- DGEList(counts=allcounts_allcells_nooligo_genefilt_nocycle)
+glm.norm <- calcNormFactors(glm,method="TMM")
+load("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Katja_exonic_gene_sizes_ERCC92.RData")
+names(exonic.gene.sizes) <- tolower(names(exonic.gene.sizes))
+ind <- match(tolower(rownames(glm.norm)), names(exonic.gene.sizes))
+exonic.gene.sizes.ord <- exonic.gene.sizes[ind]
+genes <- data.frame(gene.symbol=rownames(glm.norm),
+                    exonic.size=exonic.gene.sizes.ord)
+fpkm_glm_genefilt_nooligo <- rpkm(glm.norm, gene.length=genes$exonic.size,
+                                  normalized.lib.sizes=T, log=F)
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Ordering")
+group1<-as.vector(read.table("group1_10282015_50minModels_quiescent1_consensus_2.txt")[,1])
+group2<-as.vector(read.table("group2_10282015_50minModels_active_nondividing_consensus_2.txt")[,1])
+group3<-as.vector(read.table("group3_10282015_50minModels_active_dividing_early_consensus_2.txt")[,1])
+group4<-as.vector(read.table("group4_10282015_50minModels_active_dividing_late_consensus_2.txt")[,1])
+group5<-as.vector(read.table("group5_10282015_50minModels_active_dividing_consensus_2.txt")[,1])
+
+
+group1_fpkm<-fpkm_glm_genefilt_nooligo[,match(group1,colnames(fpkm_glm_genefilt_nooligo))]
+group2_fpkm<-fpkm_glm_genefilt_nooligo[,match(group2,colnames(fpkm_glm_genefilt_nooligo))]
+group3_fpkm<-fpkm_glm_genefilt_nooligo[,match(group3,colnames(fpkm_glm_genefilt_nooligo))]
+group4_fpkm<-fpkm_glm_genefilt_nooligo[,match(group4,colnames(fpkm_glm_genefilt_nooligo))]
+group5_fpkm<-fpkm_glm_genefilt_nooligo[,match(group5,colnames(fpkm_glm_genefilt_nooligo))]
+comb_fpkm<-cbind(group1_fpkm,group2_fpkm,group3_fpkm,group4_fpkm,group5_fpkm)
+
+comb_fpkm_col<-vector(length=length(comb_fpkm[1,]),mode="character")
+comb_fpkm_col[match(group1,colnames(comb_fpkm))]<-"#9966FF"
+comb_fpkm_col[match(group2,colnames(comb_fpkm))]<-"#c9cc00"
+comb_fpkm_col[match(group3,colnames(comb_fpkm))]<-"#ff9933"
+comb_fpkm_col[match(group4,colnames(comb_fpkm))]<-"#ff3333"
+comb_fpkm_col[match(group5,colnames(comb_fpkm))]<-"#00CCFF"
+
+sigmas<-c()
+for(z in 1:10){
+  set.seed(1234)
+  setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Figure3_Output/Tsne_ClusteringTesting/correlation/diffusionmaps_allgenes/")
+  dm<-DiffusionMap(t(log(comb_fpkm+1)))
+  sigmas<-c(sigmas,dm@sigmas@optimal.sigma)
+  pdf(paste("diffusion_map_allcells_allgenes",z,".pdf",sep=""))
+  plot(dm,col=alpha(comb_fpkm_col,0.7),pch=16,cex.symbols=1.5)
+  dev.off()
+}
+
+
+
+
+#PCA with all genes
+PCA_int<-prcomp(t(log2(comb_fpkm+1)), scale = T, center = T, retx=T)
+PCA_results<-PCA_int$x
+summa<-summary(PCA_int)
+col<-comb_fpkm_col
+data<-data.frame(x=PCA_results[,1],y=PCA_results[,2],factors=colnames(comb_fpkm),col=col)
+data$factors<-as.character(data$factors)
+data$factors <- factor(data$factors, levels=unique(data$factors), ordered = T)
+p<-ggplot(data)
+#p<-p+geom_text(aes(x=data$x,y=data$y),label=data$factors,color=data$col)
+p<-p+geom_point(aes(x=data$x,y=data$y),color=data$col,size=5,alpha=0.65)
+p<-p+theme_classic() + theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p<- p+ labs(y = paste("PC2    (",(round(summa$importance[3,2], digits = 2)-round(summa$importance[3,1],digits = 2))*100,"% of variance)", sep = ""), x =paste("PC1    (",round(summa$importance[3,1],digits = 2)*100,"% of variance)", sep = ""))
+p<-p+theme(axis.text.x=element_text(size=20))
+p<-p+theme(axis.title.x=element_text(size=24))
+p<-p+theme(axis.text.y=element_text(size=20))
+p<-p+theme(axis.title.y=element_text(size=24))
+p<-p+theme(axis.title.y=element_text(vjust=1))
+p<-p+theme(axis.title.x=element_text(vjust=-0.10))
+p
+#FIGURE 1B
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Figure3_Output/Tsne_ClusteringTesting/correlation/diffusionmaps_allgenes/")
+pdf("All_miseq_PCA_grouplabeled.pdf",height=8,width=8)
+print(p)
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Consensus Ordering Genes
+rm(list=ls())
+library(ggplot2)
+library(tsne)
+library(edgeR)
+library(Seurat)
+
+#Loading all high quality cells and filtering for lowly expressed genes and cell cycle genes
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+allcounts_allcells<-read.table("AllCounts_specPops_read_gene_ERCC_filt_FINAL.txt")
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files")
+oligos<-as.vector(read.table("STAR_oligos_updated_09232015.txt")[,1])
+allcounts_allcells_nooligo<-allcounts_allcells[,-na.omit(match(oligos,colnames(allcounts_allcells)))]
+allcounts_allcells_nooligo<-allcounts_allcells_nooligo[,!grepl("Ast",colnames(allcounts_allcells_nooligo))]
+
+#Filtering for expressed by 5 cells at 10 counts
+greaterthan0<-allcounts_allcells_nooligo>10
+greaterthan0sum<-rowSums(greaterthan0)
+allcounts_allcells_nooligo_genefilt_nocycle<-allcounts_allcells_nooligo[greaterthan0sum>=5,]
+
+
+glm <- DGEList(counts=allcounts_allcells_nooligo_genefilt_nocycle)
+glm.norm <- calcNormFactors(glm,method="TMM")
+load("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Katja_exonic_gene_sizes_ERCC92.RData")
+names(exonic.gene.sizes) <- tolower(names(exonic.gene.sizes))
+ind <- match(tolower(rownames(glm.norm)), names(exonic.gene.sizes))
+exonic.gene.sizes.ord <- exonic.gene.sizes[ind]
+genes <- data.frame(gene.symbol=rownames(glm.norm),
+                    exonic.size=exonic.gene.sizes.ord)
+fpkm_glm_genefilt_nooligo <- rpkm(glm.norm, gene.length=genes$exonic.size,
+                                  normalized.lib.sizes=T, log=F)
+
+var.genes<-as.vector(read.table("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/10282015_names_in50models_3.txt")[,1])
+fpkm_glm_genefilt_nooligo<-fpkm_glm_genefilt_nooligo[match(var.genes,rownames(fpkm_glm_genefilt_nooligo)),]
+
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Files/Ordering")
+group1<-as.vector(read.table("group1_10282015_50minModels_quiescent1_consensus_2.txt")[,1])
+group2<-as.vector(read.table("group2_10282015_50minModels_active_nondividing_consensus_2.txt")[,1])
+group3<-as.vector(read.table("group3_10282015_50minModels_active_dividing_early_consensus_2.txt")[,1])
+group4<-as.vector(read.table("group4_10282015_50minModels_active_dividing_late_consensus_2.txt")[,1])
+group5<-as.vector(read.table("group5_10282015_50minModels_active_dividing_consensus_2.txt")[,1])
+
+
+group1_fpkm<-fpkm_glm_genefilt_nooligo[,match(group1,colnames(fpkm_glm_genefilt_nooligo))]
+group2_fpkm<-fpkm_glm_genefilt_nooligo[,match(group2,colnames(fpkm_glm_genefilt_nooligo))]
+group3_fpkm<-fpkm_glm_genefilt_nooligo[,match(group3,colnames(fpkm_glm_genefilt_nooligo))]
+group4_fpkm<-fpkm_glm_genefilt_nooligo[,match(group4,colnames(fpkm_glm_genefilt_nooligo))]
+group5_fpkm<-fpkm_glm_genefilt_nooligo[,match(group5,colnames(fpkm_glm_genefilt_nooligo))]
+comb_fpkm<-cbind(group1_fpkm,group2_fpkm,group3_fpkm,group4_fpkm,group5_fpkm)
+
+comb_fpkm_col<-vector(length=length(comb_fpkm[1,]),mode="character")
+comb_fpkm_col[match(group1,colnames(comb_fpkm))]<-"#9966FF"
+comb_fpkm_col[match(group2,colnames(comb_fpkm))]<-"#c9cc00"
+comb_fpkm_col[match(group3,colnames(comb_fpkm))]<-"#ff9933"
+comb_fpkm_col[match(group4,colnames(comb_fpkm))]<-"#ff3333"
+comb_fpkm_col[match(group5,colnames(comb_fpkm))]<-"#00CCFF"
+
+sigmas<-c()
+for(z in 1:20){
+  set.seed(1234)
+  setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Figure3_Output/Tsne_ClusteringTesting/correlation/diffusionmaps_allgenes/")
+  dm<-DiffusionMap(t(log(comb_fpkm+1)))
+  sigmas<-c(sigmas,dm@sigmas@optimal.sigma)
+  pdf(paste("diffusion_map_allcells_consensusordering",z,".pdf",sep=""))
+  plot(dm,col=alpha(comb_fpkm_col,0.7),pch=16,cex.symbols=1.5)
+  dev.off()
+}
+
+#PCA with conesensus ordering genes
+PCA_int<-prcomp(t(log2(comb_fpkm+1)), scale = T, center = T, retx=T)
+PCA_results<-PCA_int$x
+summa<-summary(PCA_int)
+col<-comb_fpkm_col
+data<-data.frame(x=PCA_results[,1],y=PCA_results[,2],factors=colnames(comb_fpkm),col=col)
+data$factors<-as.character(data$factors)
+data$factors <- factor(data$factors, levels=unique(data$factors), ordered = T)
+p<-ggplot(data)
+#p<-p+geom_text(aes(x=data$x,y=data$y),label=data$factors,color=data$col)
+p<-p+geom_point(aes(x=data$x,y=data$y),color=data$col,size=5,alpha=0.65)
+p<-p+theme_classic() + theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p<- p+ labs(y = paste("PC2    (",(round(summa$importance[3,2], digits = 2)-round(summa$importance[3,1],digits = 2))*100,"% of variance)", sep = ""), x =paste("PC1    (",round(summa$importance[3,1],digits = 2)*100,"% of variance)", sep = ""))
+p<-p+theme(axis.text.x=element_text(size=20))
+p<-p+theme(axis.title.x=element_text(size=24))
+p<-p+theme(axis.text.y=element_text(size=20))
+p<-p+theme(axis.title.y=element_text(size=24))
+p<-p+theme(axis.title.y=element_text(vjust=1))
+p<-p+theme(axis.title.x=element_text(vjust=-0.10))
+p
+#FIGURE 1B
+setwd("/Volumes/guacamole/Software/Final Scripts for Paper _ 01152015/Figure3_Output/Tsne_ClusteringTesting/correlation/diffusionmaps_allgenes/")
+pdf("consensusordering_miseq_PCA_grouplabeled.pdf",height=8,width=8)
+print(p)
+dev.off()
+
+library(scatterplot3d)
+quartz()
+pdf("consensusordering_miseq_PCA_3d_grouplabeled.pdf")
+scatterplot3d(PCA_results[,1:3],color=alpha(comb_fpkm_col,0.7),pch=16,cex.symbols=1.5)
+dev.off()
+
+

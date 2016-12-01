@@ -1,0 +1,101 @@
+monocle_theme_opts <- function()
+{
+    theme(strip.background = element_rect(colour = 'white', fill = 'white')) +
+    theme(panel.border = element_blank(), axis.line = element_line()) +
+    theme(panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank()) +
+    theme(panel.grid.major.x = element_blank(), panel.grid.major.y = element_blank()) + 
+    theme(panel.background = element_rect(fill='white'))
+}
+
+plot_genes_in_pseudotime_mod <-function (cds_subset, min_expr = NULL, cell_size = 0.75, nrow = NULL, 
+    ncol = 1, panel_order = NULL, color_by = "State", trend_formula = "adjusted_expression ~ sm.ns(Pseudotime, df=3)", 
+    label_by_short_name = TRUE,color_custom) 
+{
+	require(grid)
+	require(reshape)
+	require(monocle)
+    if (cds_subset@expressionFamily@vfamily %in% c("zanegbinomialff", 
+        "negbinomial", "poissonff", "quasipoissonff")) {
+        integer_expression <- TRUE
+    }
+    else {
+        integer_expression <- FALSE
+    }
+    if (integer_expression) {
+        cds_exprs <- melt(round(exprs(cds_subset)))
+    }
+    else {
+        cds_exprs <- melt(exprs(cds_subset))
+    }
+    if (is.null(min_expr)) {
+        min_expr <- cds_subset@lowerDetectionLimit
+    }
+    colnames(cds_exprs) <- c("f_id", "Cell", "expression")
+    cds_pData <- pData(cds_subset)
+    cds_fData <- fData(cds_subset)
+    cds_exprs <- merge(cds_exprs, cds_fData, by.x = "f_id", by.y = "row.names")
+    cds_exprs <- merge(cds_exprs, cds_pData, by.x = "Cell", by.y = "row.names")
+    if (integer_expression) {
+        cds_exprs$adjusted_expression <- cds_exprs$expression
+    }
+    else {
+        cds_exprs$adjusted_expression <- log10(cds_exprs$expression)
+    }
+    if (label_by_short_name == TRUE) {
+        if (is.null(cds_exprs$gene_short_name) == FALSE) {
+            cds_exprs$feature_label <- as.character(cds_exprs$gene_short_name)
+            cds_exprs$feature_label[is.na(cds_exprs$feature_label)] <- cds_exprs$f_id
+        }
+        else {
+            cds_exprs$feature_label <- cds_exprs$f_id
+        }
+    }
+    else {
+        cds_exprs$feature_label <- cds_exprs$f_id
+    }
+    cds_exprs$feature_label <- factor(cds_exprs$feature_label)
+    cds_exprs$feature_label<-as.character(cds_exprs$feature_label)
+	cds_exprs$feature_label <- factor(cds_exprs$feature_label, levels=unique(cds_exprs$feature_label), ordered = T)
+    merged_df_with_vgam <- ddply(cds_exprs, .(feature_label), 
+        function(x) {
+            fit_res <- tryCatch({
+                vg <- suppressWarnings(vgam(formula = as.formula(trend_formula), 
+                  family = cds_subset@expressionFamily, data = x, 
+                  maxit = 30, checkwz = FALSE))
+                if (integer_expression) {
+                  res <- predict(vg, type = "response")
+                  res[res < min_expr] <- min_expr
+                }
+                else {
+                  res <- 10^(predict(vg, type = "response"))
+                  res[res < log10(min_expr)] <- log10(min_expr)
+                }
+                res
+            }, error = function(e) {
+                print("Error!")
+                print(e)
+                res <- rep(NA, nrow(x))
+                res
+            })
+            expectation = fit_res
+            data.frame(Pseudotime = x$Pseudotime, expectation = expectation)
+        })
+    if (is.null(panel_order) == FALSE) {
+        cds_subset$feature_label <- factor(cds_subset$feature_label, 
+            levels = panel_order)
+    }
+    q <- ggplot(aes(Pseudotime, expression), data = cds_exprs)
+    if (is.null(color_by) == FALSE) {
+        q <- q + geom_point(aes_string(color = color_by), size = I(cell_size),alpha=0.8)#+ geom_point(aes_string(color = color_by), shape=1,size = I(cell_size))
+    }
+    else {
+        q <- q + geom_point(size = I(cell_size))
+    }
+    q <- q + geom_line(aes(Pseudotime, expectation), data = merged_df_with_vgam)
+    q <- q + scale_y_log10() + facet_wrap(~feature_label, nrow = nrow, 
+        ncol = ncol, scales = "free_y")
+    q <- q + ylab("Expression") + xlab("Pseudo-time")
+    q <- q + monocle_theme_opts()
+    q <- q + scale_color_manual(values=color_custom)
+    q
+}

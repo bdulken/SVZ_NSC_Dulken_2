@@ -1,0 +1,15 @@
+group1	20	0	0	0
+group2	0	20	0	0
+group3	0	0	20	0
+group4	0	0	0	20
+Accuracy	1
+Kappa	1
+AccuracyLower	0.954935964932308
+AccuracyUpper	1
+AccuracyNull	0.25
+AccuracyPValue	6.842277657836e-49
+McnemarPValue	NA
+Class: group1	1	1	1	1	0.25	0.25	0.25	1
+Class: group2	1	1	1	1	0.25	0.25	0.25	1
+Class: group3	1	1	1	1	0.25	0.25	0.25	1
+Class: group4	1	1	1	1	0.25	0.25	0.25	1
